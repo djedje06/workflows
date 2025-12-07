@@ -1,0 +1,37 @@
+name: Keyword Alert
+
+on:
+  push:
+    branches: [ "**" ]
+  issues:
+    types: [opened, edited]
+  pull_request:
+    types: [opened, edited]
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+      uses: actions/checkout@v4
+
+      - name: Extract commit message
+        run: echo "$GITHUB_EVENT_PATH"
+
+      - name: Check for keywords
+        run: |
+          LAST_COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
+
+          KEYWORDS=("mine" "mining" "POW" "Proof of work")
+
+          for word in "${KEYWORDS[@]}"; do
+            if echo "$LAST_COMMIT_MESSAGE" | grep -iq "$word"; then
+              echo "Keyword detected: $word"
+
+              curl -X POST -H "Content-Type: application/json" \
+                -d "{\"content\": \"🔔 Mot-clé **$word** détecté dans un commit !\"}" \
+                https://discord.com/api/webhooks/TON_WEBHOOK
+
+              exit 0
+            fi
+          done
