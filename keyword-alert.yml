@@ -3,35 +3,46 @@ name: Keyword Alert
 on:
   push:
     branches: [ "**" ]
-  issues:
-    types: [opened, edited]
-  pull_request:
-    types: [opened, edited]
 
 jobs:
   alert:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Extract commit message
-        run: echo "$GITHUB_EVENT_PATH"
+      - name: Read last commit
+        run: echo "LAST_MSG=$(git log -1 --pretty=%B)" >> $GITHUB_ENV
 
-      - name: Check for keywords
+      - name: Detect keywords
+        id: detect
         run: |
-          LAST_COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
+          if echo "$LAST_MSG" | grep -Eiq "(mine|mining|pow|proof of work)"; then
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+          fi
 
-          KEYWORDS=("mine" "mining" "POW" "Proof of work")
+      - name: Send Discord alert
+        if: steps.detect.outputs.found == 'true'
+        run: |
+          curl -X POST -H "Content-Type: application/json" \
+            -d "{\"content\": \"🔔 Mot-clé détecté dans un commit : $LAST_MSG\"}" \
+            https://discord.com/api/webhooks/1447144443550633986/OpX7QtromDQBpTKh3-2EP3tsE8kHYib_c6_X5UVLHpzIMyNmhh-Z2gMi6tz5u6Nl-RDP
 
-          for word in "${KEYWORDS[@]}"; do
-            if echo "$LAST_COMMIT_MESSAGE" | grep -iq "$word"; then
-              echo "Keyword detected: $word"
+      - name: Send Email Alert
+        if: steps.detect.outputs.found == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: "🔔 Keyword detected in GitHub commit"
+          to: ${{ secrets.ALERT_EMAIL_TO }}
+          from: ${{ secrets.SMTP_USER }}
+          body: |
+            A keyword was detected in a commit.
 
-              curl -X POST -H "Content-Type: application/json" \
-                -d "{\"content\": \"🔔 Mot-clé **$word** détecté dans un commit !\"}" \
-                https://discord.com/api/webhooks/TON_WEBHOOK
-
-              exit 0
-            fi
-          done
+            Commit message:
+            $LAST_MSG
